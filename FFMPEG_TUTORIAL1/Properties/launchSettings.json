@@ -1,0 +1,9 @@
+{
+  "profiles": {
+    "FFMPEG_TUTORIAL1": {
+      "commandName": "Project",
+      "commandLineArgs": "Sample/sample.mp4",
+      "nativeDebugging": false
+    }
+  }
+}
