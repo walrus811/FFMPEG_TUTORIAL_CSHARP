@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "FFMPEG_TUTORIAL2": {
+      "commandName": "Project",
+      "commandLineArgs": "Sample/sample.mp4"
+    }
+  }
+}

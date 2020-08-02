@@ -1,11 +1,18 @@
-﻿using System;
+﻿using FFmpeg.AutoGen;
+using System;
+using System.Drawing;
+using System.Drawing.Imaging;
+using System.Reflection.Emit;
+using System.Runtime.InteropServices;
 
 namespace FFMPEG_TUTORIAL2
 {
     class Program
     {
-        static void Main(string[] args)
+        static unsafe void Main(string[] args)
         {
+            #region Chapter 1
+
             if (args.Length < 0)
             {
                 Console.WriteLine($"Please enter a paramter for input file name!");
@@ -19,7 +26,6 @@ namespace FFMPEG_TUTORIAL2
                 return;
             }
 
-
             FFmpegBinariesHelper.RegisterFFmpegBinaries();
             Console.WriteLine($"FFmpeg version info: {ffmpeg.av_version_info()}");
 
@@ -27,7 +33,6 @@ namespace FFMPEG_TUTORIAL2
             var filePath = args[0];
 
             AVFormatContext* pFormatCtx = ffmpeg.avformat_alloc_context();
-
             if (ffmpeg.avformat_open_input(&pFormatCtx, filePath, null, null) != 0)
             {
                 Console.WriteLine($"The file, {filePath} can't be opened!");
@@ -46,7 +51,6 @@ namespace FFMPEG_TUTORIAL2
             }
 
             AVCodec* pCodec = null;
-
             int videoCodecIndex = ffmpeg.av_find_best_stream(pFormatCtx, AVMediaType.AVMEDIA_TYPE_VIDEO, -1, -1, &pCodec, 0);
 
             if (videoCodecIndex == -1)
@@ -81,14 +85,7 @@ namespace FFMPEG_TUTORIAL2
 
             Console.WriteLine($"Succeeded to open the file, {filePath}({codecName}, {frameSize.Width}X{frameSize.Height}, {pixelFormat})");
 
-
-
-            AVFrame* pFrame = ffmpeg.av_frame_alloc();
-            if (pFrame == null)
-            {
-                Console.WriteLine($"Failed to allocate frame");
-                return;
-            }
+            #endregion
 
             var sourceSize = frameSize;
             var sourcePixelForamt = pixelFormat;
@@ -104,6 +101,7 @@ namespace FFMPEG_TUTORIAL2
                                                    null, null);
 
 
+
             int numBytes = ffmpeg.av_image_get_buffer_size(destPixelFormat, destSize.Width, destSize.Height, 1);
 
             if (numBytes <= 0)
@@ -117,10 +115,18 @@ namespace FFMPEG_TUTORIAL2
             var destData = new byte_ptrArray4();
             var destLinesize = new int_array4();
 
-
-            var sdvb = ffmpeg.av_image_fill_arrays(ref destData, ref destLinesize, null, destPixelFormat, destSize.Width, destSize.Height, 1);
+            //var sdvb = ffmpeg.av_image_fill_arrays(ref destData, ref destLinesize, null, destPixelFormat, destSize.Width, destSize.Height, 1);
 
             ffmpeg.av_image_fill_arrays(ref destData, ref destLinesize, (byte*)buffer, destPixelFormat, destSize.Width, destSize.Height, 1);
+
+            AVFrame* pFrame = ffmpeg.av_frame_alloc();
+            if (pFrame == null)
+            {
+                Console.WriteLine($"Failed to allocate frame");
+                return;
+            }
+
+            
 
             AVFrame* pFrameRgb = ffmpeg.av_frame_alloc();
             if (pFrameRgb == null)
@@ -129,42 +135,71 @@ namespace FFMPEG_TUTORIAL2
                 return;
             }
 
-            AVPacket packet;
+
+            AVPacket* pPacket = ffmpeg.av_packet_alloc();
             int frameNumber = 0;
             int error = 0;
-            do
+
+            while (true)
             {
-                try
+                do
                 {
-                    do
+                    try
                     {
-                        error = ffmpeg.av_read_frame(pFormatCtx, &packet);
-                    } while (packet.stream_index != videoCodecIndex);
+                        do
+                        {
+                            error = ffmpeg.av_read_frame(pFormatCtx, pPacket);
 
-                    ffmpeg.avcodec_send_packet(pCodecCtx, &packet);
-                }
-                finally
-                {
-                    ffmpeg.av_packet_unref(&packet);
-                }
+                            if (error == ffmpeg.AVERROR_EOF)
+                            {
+                                Console.WriteLine($"The frame reached end at {frameNumber - 1}");
+                                goto READ_END;
+                            }
 
-                error = ffmpeg.avcodec_receive_frame(pCodecCtx, pFrame);
+                            error.ThrowExceptionIfError();
+                        } while (pPacket->stream_index != videoCodecIndex);
 
-                var result = ffmpeg.sws_scale(convertContext, pFrame->data, pFrame->linesize, 0, pCodecCtx->height, destData, destLinesize);
-                var data = new byte_ptrArray8();
-                data.UpdateFrom(destData);
-                var lineSize = new int_array8();
-                lineSize.UpdateFrom(destLinesize);
+                        ffmpeg.avcodec_send_packet(pCodecCtx, pPacket);
+                    }
+                    finally
+                    {
+                        ffmpeg.av_packet_unref(pPacket);
+                    }
 
-                var destFrame = new AVFrame() { data = data, linesize = lineSize, width = destSize.Width, height = destSize.Height };
+                    error = ffmpeg.avcodec_receive_frame(pCodecCtx, pFrame);
 
+                    var result = ffmpeg.sws_scale(convertContext, pFrame->data, pFrame->linesize, 0, pCodecCtx->height, destData, destLinesize);
+                    var data = new byte_ptrArray8();
+                    data.UpdateFrom(destData);
+                    var lineSize = new int_array8();
+                    lineSize.UpdateFrom(destLinesize);
+                    //RGB 수정
+                    var destFrame = new AVFrame() { data = data, linesize = lineSize, width = destSize.Width, height = destSize.Height };
 
-                using (var bitmap = new Bitmap(destFrame.width, destFrame.height, destFrame.linesize[0], PixelFormat.Format24bppRgb, (IntPtr)destFrame.data[0]))
-                    bitmap.Save($"frame.{frameNumber:D8}.jpg", ImageFormat.Jpeg);
-                Console.WriteLine($"frame: {frameNumber}");
-                frameNumber++;
+                    using (var bitmap = new Bitmap(destFrame.width, destFrame.height, destFrame.linesize[0], PixelFormat.Format24bppRgb, (IntPtr)destFrame.data[0]))
+                        bitmap.Save($"frame.{frameNumber:D8}.jpg", ImageFormat.Jpeg);
+                    Console.WriteLine($"frame: {frameNumber}");
 
-            } while (error == ffmpeg.AVERROR(ffmpeg.EAGAIN));
+                    frameNumber++;
+
+                } while (error == ffmpeg.AVERROR(ffmpeg.EAGAIN));
+            }
+
+            READ_END:
+            error.ThrowExceptionIfError();
+            //free 코드 추가
+            ffmpeg.av_frame_unref(pFrame);
+            ffmpeg.av_free(pFrame);
+            ffmpeg.av_frame_unref(pFrameRgb);
+            ffmpeg.av_free(pFrameRgb);
+            ffmpeg.av_packet_unref(pPacket);
+            ffmpeg.av_free(pPacket);
+
+            Marshal.FreeHGlobal(buffer);
+            ffmpeg.avcodec_free_context(&pCodecCtx);
+            ffmpeg.avformat_close_input(&pFormatCtx);
+            ffmpeg.sws_freeContext(convertContext);
+
 
             Console.ReadKey();
         }
