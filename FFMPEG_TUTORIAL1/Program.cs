@@ -3,6 +3,7 @@
     using FFmpeg.AutoGen;
     using System;
     using System.Drawing;
+    using System.Drawing.Imaging;
     using System.IO;
     using System.Runtime.InteropServices;
 
@@ -50,6 +51,7 @@
             }
 
             AVCodec* pCodec = null;
+
             int videoCodecIndex = ffmpeg.av_find_best_stream(pFormatCtx, AVMediaType.AVMEDIA_TYPE_VIDEO, -1, -1, &pCodec, 0);
 
             if (videoCodecIndex == -1)
@@ -72,47 +74,19 @@
                 return;
             }
 
-            var codecName = ffmpeg.avcodec_get_name(pCodec->id);
-
             if (ffmpeg.avcodec_open2(pCodecCtx, pCodec, null) < 0)
             {
-                Console.WriteLine($"Can't open {filePath} with codec, {codecName}");
+                Console.WriteLine($"Can't open {filePath} with codec, {ffmpeg.avcodec_get_name(pCodec->id)}");
                 return;
             }
 
+            var codecName = ffmpeg.avcodec_get_name(pCodec->id);
             var frameSize = new Size(pCodecCtx->width, pCodecCtx->height);
             var pixelFormat = pCodecCtx->pix_fmt;
 
             Console.WriteLine($"Succeeded to open the file, {filePath}({codecName}, {frameSize.Width}X{frameSize.Height}, {pixelFormat})");
 
-            AVFrame* pFrame = ffmpeg.av_frame_alloc();
-            if (pFrame == null)
-            {
-                Console.WriteLine($"Failed to allocate frame");
-                return;
-            }
-
-
-            AVFrame* pFrameRgb = ffmpeg.av_frame_alloc();
-            if (pFrameRgb == null)
-            {
-                Console.WriteLine($"Failed to allocate RGB frame");
-                return;
-            }
-
-            int numBytes = ffmpeg.av_image_get_buffer_size(AVPixelFormat.AV_PIX_FMT_RGB24, pCodecCtx->width, pCodecCtx->height,32);
-
-
-            if (numBytes <= 0)
-            {
-                Console.WriteLine($"Can't get proper buffer size.");
-                return;
-            }
-
-
             Console.ReadKey();
         }
     }
 }
-
-
